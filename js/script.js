@@ -7,8 +7,34 @@ let db,user,data={subjects:[],tasks:[],notes:[],folders:[],documents:[]},signup=
 const meta={dashboard:["SEU AMBIENTE DE ORGANIZAÇÃO","Visão geral","Seu espaço para fazer acontecer.","Acompanhe seus estudos, projetos e documentos."],estudos:["APRENDIZADO","Estudos.","Matérias, tarefas e anotações em um só lugar."],trabalhos:["EXECUÇÃO","Trabalhos e projetos.","Organize suas entregas, tarefas e prazos."],documentos:["ARQUIVO PESSOAL","Documentos.","Guarde arquivos, organize pastas e encontre tudo com facilidade."]};
 function toast(t){const e=$("#toast");e.textContent=t;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),3200)}
 function authMode(){signup=!signup;$("#auth-title").textContent=signup?"Crie seu espaço.":"Bem-vindo de volta.";$("#auth-description").textContent=signup?"Crie uma conta para manter seus dados privados.":"Entre na sua conta para acessar seu organizador." ;$("#auth-submit").textContent=signup?"Criar conta":"Entrar";$("#switch-label").textContent=signup?"Já tem uma conta?":"Ainda não tem conta?";$("#auth-toggle").textContent=signup?"Entrar":"Criar conta";$("#confirm-wrap").classList.toggle("hidden",!signup);$("#auth-message").textContent=""}
-async function authSubmit(e){e.preventDefault();let email=$("#email").value.trim(),password=$("#password").value;$("#auth-submit").disabled=true;try{if(signup){if(password!==$("#confirm-password").value)throw Error("As senhas não coincidem.");let {data:d,error}=await db.auth.signUp({email,password});if(error)throw error;if(d.session)show(d.user);else $("#auth-message").textContent="Conta criada! Confirme seu e-mail e depois entre."}else{let {data:d,error}=await db.auth.signInWithPassword({email,password});if(error)throw error;show(d.user)}}catch(e){$("#auth-message").textContent=e.message}finally{$("#auth-submit").disabled=false}}
-function show(u){user=u;$("#auth-screen").classList.add("hidden");$("#app").classList.remove("hidden");$("#user-email").textContent=u.email;$("#avatar").textContent=u.email.slice(0,2).toUpperCase();$("#today").textContent=new Intl.DateTimeFormat("pt-BR",{day:"2-digit",month:"short",weekday:"short"}).format(new Date());$("#year").textContent=new Date().getFullYear();document.querySelectorAll("[data-nav]").forEach(a=>a.classList.toggle("active",a.dataset.nav===page));let m=meta[page];$("#kicker").textContent=m[0];$("#crumb").textContent=m[1].replace(/\.$/,"");$("#page-title").textContent=m[1];$("#page-desc").textContent=m[2];load()}
+async function authSubmit(e){e.preventDefault();let email=$("#email").value.trim(),password=$("#password").value;$("#auth-submit").disabled=true;try{if(signup){if(password!==$("#confirm-password").value)throw Error("As senhas não coincidem.");let {data:d,error}=await db.auth.signUp({
+  email,
+  password,
+  options: {
+    emailRedirectTo: "https://cyberorganization.netlify.app/"
+  }
+});;if(error)throw error;if(d.session)show(d.user);else $("#auth-message").textContent="Conta criada! Confirme seu e-mail e depois entre."}else{let {data:d,error}=await db.auth.signInWithPassword({email,password});if(error)throw error;show(d.user)}}catch(e){$("#auth-message").textContent=e.message}finally{$("#auth-submit").disabled=false}}
+async function recoverPassword() {
+  const email = $("#email").value.trim();
+
+  if (!email) {
+    $("#auth-message").textContent = "Digite seu e-mail para recuperar a senha.";
+    return;
+  }
+
+  try {
+    const { error } = await db.auth.resetPasswordForEmail(email, {
+      redirectTo: "https://cyberorganization.netlify.app/"
+    });
+
+    if (error) throw error;
+
+    $("#auth-message").textContent =
+      "Enviamos um link de recuperação para seu e-mail.";
+  } catch (error) {
+    $("#auth-message").textContent = error.message;
+  }
+}function show(u){user=u;$("#auth-screen").classList.add("hidden");$("#app").classList.remove("hidden");$("#user-email").textContent=u.email;$("#avatar").textContent=u.email.slice(0,2).toUpperCase();$("#today").textContent=new Intl.DateTimeFormat("pt-BR",{day:"2-digit",month:"short",weekday:"short"}).format(new Date());$("#year").textContent=new Date().getFullYear();document.querySelectorAll("[data-nav]").forEach(a=>a.classList.toggle("active",a.dataset.nav===page));let m=meta[page];$("#kicker").textContent=m[0];$("#crumb").textContent=m[1].replace(/\.$/,"");$("#page-title").textContent=m[1];$("#page-desc").textContent=m[2];load()}
 async function load(){let names=["subjects","tasks","notes","folders","documents"];let r=await Promise.all(names.map(n=>db.from(n).select("*").order("created_at",{ascending:false})));for(let i=0;i<names.length;i++){if(r[i].error){toast(r[i].error.message);return}data[names[i]]=r[i].data||[]}render()}
 function empty(t,d){return `<div class="empty"><b>${esc(t)}</b><p>${esc(d)}</p></div>`}
 function tasksList(arr,editable=true){if(!arr.length)return empty("Nenhuma tarefa cadastrada","Adicione uma tarefa para acompanhar seu andamento.");return `<div class="list">${arr.map(t=>`<div class="task"><button class="check ${t.status==="done"?"done":""}" data-act="toggle" data-id="${t.id}">${t.status==="done"?"✓":""}</button><div class="task-text"><b class="${t.status==="done"?"strike":""}">${esc(t.title)}</b><small>${esc(t.description||"Sem detalhes")}${t.due_date?" · Prazo: "+new Date(t.due_date+"T12:00:00").toLocaleDateString("pt-BR"):""}</small></div><span class="pill ${t.status}">${t.status==="done"?"Concluída":t.status==="doing"?"Em andamento":"Pendente"}</span>${editable?`<button class="dots" data-act="edit-task" data-id="${t.id}">···</button>`:""}</div>`).join("")}</div>`}
@@ -29,6 +55,6 @@ function noteForm(){modal("Nova anotação",input("Título","title")+`<label>Con
 function folderForm(){modal("Nova pasta",input("Nome da pasta","name"),async f=>{let {error}=await db.from("folders").insert({name:f.get("name"),user_id:user.id});if(error)throw error;toast("Pasta criada.")})}
 async function action(act,id){try{if(act==="toggle"){let t=data.tasks.find(x=>x.id===id),{error}=await db.from("tasks").update({status:t.status==="done"?"todo":"done"}).eq("id",id);if(error)throw error;await load()}if(act==="edit-task")taskForm(data.tasks.find(t=>t.id===id).category,data.tasks.find(t=>t.id===id));if(["delete-note","delete-subject","delete-folder"].includes(act)){if(!confirm("Confirma a exclusão?"))return;let table={"delete-note":"notes","delete-subject":"subjects","delete-folder":"folders"}[act],{error}=await db.from(table).delete().eq("id",id);if(error)throw error;await load();toast("Item excluído.")}if(act==="download"){let d=data.documents.find(x=>x.id===id),{data:r,error}=await db.storage.from("atelier-documents").createSignedUrl(d.storage_path,60);if(error)throw error;window.open(r.signedUrl,"_blank","noopener")}if(act==="delete-file"){let d=data.documents.find(x=>x.id===id);if(!confirm("Excluir o arquivo permanentemente?"))return;let {error:e}=await db.storage.from("atelier-documents").remove([d.storage_path]);if(e)throw e;let {error}=await db.from("documents").delete().eq("id",id);if(error)throw error;await load();toast("Arquivo excluído.")}}catch(e){toast(e.message)}}
 async function upload(e){let f=e.target.files[0];e.target.value="";if(!f)return;if(f.size>20*1024*1024){toast("O arquivo ultrapassa 20 MB.");return}try{let safe=f.name.normalize("NFKD").replace(/[^\\w.-]+/g,"_"),path=`${user.id}/${crypto.randomUUID()}-${safe}`;let {error}=await db.storage.from("atelier-documents").upload(path,f);if(error)throw error;let {error:insertError}=await db.from("documents").insert({name:f.name,storage_path:path,size:f.size,mime_type:f.type,user_id:user.id});if(insertError){await db.storage.from("atelier-documents").remove([path]);throw insertError}toast("Arquivo enviado.");await load()}catch(err){toast(err.message)}}
-async function init(){ $("#auth-toggle").onclick=authMode;$("#auth-form").onsubmit=authSubmit;$("#menu-toggle").onclick=()=>$("#sidebar").classList.toggle("open");$("#sign-out").onclick=async()=>{await db.auth.signOut();location.reload()};if(!ready){$("#auth-message").textContent="Configure a URL e a Publishable key em js/config.js antes de entrar.";$("#auth-submit").disabled=true;return}db=window.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);let {data:{session}}=await db.auth.getSession();if(session)show(session.user);db.auth.onAuthStateChange((_e,s)=>{if(s)show(s.user)})}
-document.addEventListener("DOMContentLoaded",init);
+async function init(){ $("#auth-toggle").onclick=authMode;$("#auth-form").onsubmit=authSubmit;$("#forgot-password").onclick=recoverPassword;$("#menu-toggle").onclick=()=>$("#sidebar").classList.toggle("open");$("#sign-out").onclick=async()=>{await db.auth.signOut();location.reload()};if(!ready){$("#auth-message").textContent="Configure a URL e a Publishable key em js/config.js antes de entrar.";$("#auth-submit").disabled=true;return}db=window.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);let {data:{session}}=await db.auth.getSession();if(session)show(session.user);db.auth.onAuthStateChange((_e,s)=>{if(s)show(s.user)})}
+document.addEventListener("DOMContentLoaded",init)
 })();
